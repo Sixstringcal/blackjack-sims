@@ -153,6 +153,9 @@
     let consecutiveWins = 0;
     let runningCount = 0;
 
+    // per-hand counters
+    let handsWon = 0, handsLost = 0, pushes = 0, blackjacks = 0, totalHands = 0;
+
     const hiLoValue = (c)=>{ if(c>=2 && c<=6) return 1; if(c>=7 && c<=9) return 0; return -1 };
 
     for(let h=0; h<opts.handsPerSim; h++){
@@ -224,6 +227,13 @@
       else if(playerVal < dealerVal) outcome = -1;
       else outcome = 0;
 
+      // track per-hand totals
+      totalHands++;
+      if(playerBJ && !dealerBJ) blackjacks++;
+      if(outcome > 0) handsWon++;
+      else if(outcome < 0) handsLost++;
+      else pushes++;
+
       const winAmount = bet * outcome;
       bankroll += winAmount;
 
@@ -232,7 +242,7 @@
       if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
     }
 
-    return bankroll;
+    return { finalBankroll: bankroll, handsWon, handsLost, pushes, blackjacks, totalHands };
   }
 
   // Async-run many simulations in small batches so UI stays responsive
@@ -245,7 +255,7 @@
       if(stopRequested) break;
       const end = Math.min(i+batch, opts.sims);
       for(let j=i;j<end;j++){
-        const r = simulateOne(opts);
+        const r = simulateOne(opts); // now returns object with counts
         results.push(r);
       }
       if(progressCb) progressCb(Math.min(opts.sims, results.length), opts.sims);
@@ -266,10 +276,40 @@
         qs('progress').textContent = `Running simulations: ${done}/${total}`;
       });
 
-      const avg = results.reduce((a,b)=>a+b,0) / Math.max(1, results.length);
-      const wins = results.filter(r=>r>opts.bankroll).length;
-      const ev = avg - opts.bankroll;
-      qs('output').textContent = JSON.stringify({avgFinalBankroll:avg, ev, winRate:wins/Math.max(1,results.length)}, null, 2);
+      // aggregate results: results are objects {finalBankroll, handsWon, handsLost, pushes, blackjacks, totalHands}
+      const simCount = results.length;
+      const avgFinal = results.reduce((a,b)=>a + b.finalBankroll,0) / Math.max(1, simCount);
+      const profitableSims = results.filter(r=>r.finalBankroll>opts.bankroll).length;
+
+      // per-hand totals across all sims
+      const totalHands = results.reduce((a,b)=>a + b.totalHands,0);
+      const totalWins = results.reduce((a,b)=>a + b.handsWon,0);
+      const totalLosses = results.reduce((a,b)=>a + b.handsLost,0);
+      const totalPushes = results.reduce((a,b)=>a + b.pushes,0);
+      const totalBJs = results.reduce((a,b)=>a + b.blackjacks,0);
+
+      const perHandWinRate = totalWins / Math.max(1, totalHands);
+      const perHandLossRate = totalLosses / Math.max(1, totalHands);
+      const perHandPushRate = totalPushes / Math.max(1, totalHands);
+
+      const ev = avgFinal - opts.bankroll;
+
+      qs('output').textContent = JSON.stringify({
+        simsRun: simCount,
+        avgFinalBankroll: avgFinal,
+        ev,
+        profitableSimRate: profitableSims/Math.max(1,simCount),
+        perHand: {
+          totalHands,
+          wins: totalWins,
+          losses: totalLosses,
+          pushes: totalPushes,
+          blackjacks: totalBJs,
+          winRate: perHandWinRate,
+          lossRate: perHandLossRate,
+          pushRate: perHandPushRate
+        }
+      }, null, 2);
       qs('progress').textContent = 'Done';
     }catch(e){
       qs('progress').textContent = 'Error';

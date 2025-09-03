@@ -43,6 +43,9 @@ function simulateOne(opts){
   let consecutiveWins = 0;
   let runningCount = 0;
 
+  // per-hand counters
+  let handsWon = 0, handsLost = 0, pushes = 0, blackjacks = 0, totalHands = 0;
+
   const hiLoValue = (c)=>{ if(c>=2 && c<=6) return 1; if(c>=7 && c<=9) return 0; return -1 };
 
   for(let h=0; h<opts.handsPerSim; h++){
@@ -110,6 +113,13 @@ function simulateOne(opts){
     else if(playerVal < dealerVal) outcome = -1;
     else outcome = 0;
 
+    // per-hand tracking
+    totalHands++;
+    if(playerBJ && !dealerBJ) blackjacks++;
+    if(outcome > 0) handsWon++;
+    else if(outcome < 0) handsLost++;
+    else pushes++;
+
     const winAmount = bet * outcome;
     bankroll += winAmount;
 
@@ -119,7 +129,7 @@ function simulateOne(opts){
     if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
   }
 
-  return bankroll;
+  return { finalBankroll: bankroll, handsWon, handsLost, pushes, blackjacks, totalHands };
 }
 
 onmessage = function(ev){
@@ -132,13 +142,28 @@ onmessage = function(ev){
     for(let i=0;i<sims;i++){
       if(!running) break;
       if(i%10===0) postMessage({type:'progress', text:`Running sim ${i+1}/${sims}`});
-      const endBankroll = simulateOne(opts);
-      results.push(endBankroll);
+      const simRes = simulateOne(opts);
+      results.push(simRes);
     }
-    const avg = results.reduce((a,b)=>a+b,0)/results.length;
-    const wins = results.filter(r=>r>opts.bankroll).length;
+
+    const simCount = results.length;
+    const avg = results.reduce((a,b)=>a + b.finalBankroll,0)/Math.max(1,simCount);
+    const profitable = results.filter(r=>r.finalBankroll>opts.bankroll).length;
+
+    const totalHands = results.reduce((a,b)=>a + b.totalHands,0);
+    const totalWins = results.reduce((a,b)=>a + b.handsWon,0);
+    const totalLosses = results.reduce((a,b)=>a + b.handsLost,0);
+    const totalPushes = results.reduce((a,b)=>a + b.pushes,0);
+    const totalBJs = results.reduce((a,b)=>a + b.blackjacks,0);
+
     const ev = avg - opts.bankroll;
-    postMessage({type:'result', data:{avgFinalBankroll:avg, ev, winRate:wins/results.length, raw:results}});
+    postMessage({type:'result', data:{
+      avgFinalBankroll:avg,
+      ev,
+      profitableSimRate: profitable/Math.max(1,simCount),
+      perHand: { totalHands, wins: totalWins, losses: totalLosses, pushes: totalPushes, blackjacks: totalBJs },
+      raw: results
+    }});
   } else if(msg.type === 'stop'){
     running = false;
   }
