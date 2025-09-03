@@ -73,12 +73,13 @@ function simulateOne(opts){
   let bankroll = opts.bankroll;
   let bet = opts.startBet;
   let consecutiveLosses = 0;
+  let consecutiveWins = 0;
   let runningCount = 0;
 
   const hiLoValue = (c)=>{ if(c>=2 && c<=6) return 1; if(c>=7 && c<=9) return 0; return -1 };
 
   for(let h=0; h<opts.handsPerSim; h++){
-    if(pos > shoe.length - 10 || pos >= shoe.length - cutCard){ shoe = makeShoe(opts.decks); pos=0; runningCount=0; }
+    if(pos > shoe.length - 10 || pos >= shoe.length - cutCard){ shoe = makeShoe(opts.decks); pos=0; runningCount=0; consecutiveLosses=0; consecutiveWins=0; }
 
     // betting systems
     if(opts.betSystem === 'flat'){
@@ -88,15 +89,17 @@ function simulateOne(opts){
     } else if(opts.betSystem === 'triple-martingale'){
       bet = consecutiveLosses===0 ? opts.minBet : Math.min(opts.minBet * Math.pow(3, consecutiveLosses), opts.tableLimit);
     } else if(opts.betSystem === 'reverse-martingale'){
-      bet = Math.min(opts.minBet * Math.pow(2, Math.max(0, -consecutiveLosses)), opts.tableLimit);
+      // increase after consecutive wins
+      bet = Math.min(opts.tableLimit, opts.minBet * Math.pow(2, Math.max(0, consecutiveWins)));
     } else if(opts.betSystem === 'proportional'){
       bet = Math.max(opts.minBet, Math.floor(bankroll * (opts.propPct/100)));
     } else if(opts.betSystem === 'kelly'){
       const edge = 0.01; const f = Math.max(0, edge); bet = Math.max(opts.minBet, Math.floor(bankroll * Math.min(f*opts.kellyFrac,1)));
     } else if(opts.betSystem === 'count-based'){
       let trueCount = runningCount;
-      if(opts.useTrueCount){ const decksLeft = Math.max(1, Math.round((shoe.length-pos)/(52))); trueCount = Math.round(runningCount / decksLeft); }
-      const mult = Math.max(1, Math.min(opts.countMult, 1 + trueCount));
+      if(opts.useTrueCount){ const decksLeft = Math.max(0.1, (shoe.length-pos)/52); trueCount = runningCount / decksLeft; }
+      const tcInt = Math.floor(trueCount);
+      const mult = Math.max(1, Math.min(opts.countMult, 1 + tcInt));
       bet = Math.min(opts.tableLimit, Math.max(opts.minBet, Math.floor(opts.minBet * mult)));
     }
 
@@ -106,7 +109,8 @@ function simulateOne(opts){
     const player = [shoe[pos++], shoe[pos++]];
     const dealerUp = shoe[pos++];
     const dealerHole = shoe[pos++];
-    if(opts.enableCount){ runningCount += hiLoValue(player[0]) + hiLoValue(player[1]) + hiLoValue(dealerUp) + hiLoValue(dealerHole); }
+
+    if(opts.enableCount){ runningCount += hiLoValue(player[0]) + hiLoValue(player[1]) + hiLoValue(dealerUp); }
 
     let playerHand = player.slice();
     while(basicStrategy(playerHand, dealerUp) === 'hit'){
@@ -115,13 +119,14 @@ function simulateOne(opts){
       if(handValue(playerHand) > 21) break;
     }
 
+    if(opts.enableCount) runningCount += hiLoValue(dealerHole);
+
     const dealerHand = [dealerUp, dealerHole];
     while(true){
       const dv = handValue(dealerHand);
       if(dv>21) break;
       if(dv>17) break;
-      const hasAce = dealerHand.includes(11);
-      if(dv===17 && hasAce && opts.ds17){ /* hit soft 17 */ } else if(dv===17) break;
+      if(dv===17){ const hasAce = dealerHand.includes(11); if(hasAce && opts.ds17) { /* hit soft 17 */ } else break; }
       dealerHand.push(shoe[pos++]);
       if(opts.enableCount) runningCount += hiLoValue(dealerHand[dealerHand.length-1]);
     }
@@ -142,7 +147,8 @@ function simulateOne(opts){
     const winAmount = bet * outcome;
     bankroll += winAmount;
 
-    if(outcome < 0) consecutiveLosses++; else if(outcome>0) consecutiveLosses = 0;
+    if(outcome < 0){ consecutiveLosses++; consecutiveWins = 0; } else if(outcome>0){ consecutiveWins++; consecutiveLosses = 0; } else { consecutiveWins = 0; consecutiveLosses = 0; }
+
     if(bankroll <= 0){ bankroll = 0; break; }
     if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
   }
