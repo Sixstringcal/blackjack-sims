@@ -238,6 +238,19 @@
       bankroll += winAmount;
 
       if(outcome < 0){ consecutiveLosses++; consecutiveWins = 0; } else if(outcome>0){ consecutiveWins++; consecutiveLosses = 0; } else { consecutiveWins = 0; consecutiveLosses = 0; }
+
+      // If user requested stop-after-next-win, only stop once we see a winning hand.
+      if(typeof stopOnWin !== 'undefined' && stopOnWin){
+        if(outcome > 0){
+          // mark stop requested so outer runner stops after this simulation
+          stopRequested = true;
+          stopOnWin = false;
+          // finish this simulateOne early and return aggregated stats
+          break;
+        }
+        // if this hand wasn't a win, continue playing (true gamblers don't stop on a loss)
+      }
+
       if(bankroll <= 0){ bankroll = 0; break; }
       if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
     }
@@ -247,6 +260,8 @@
 
   // Async-run many simulations in small batches so UI stays responsive
   let stopRequested = false;
+  // If true, user requested to stop but only after the next hand they win
+  let stopOnWin = false;
   async function runSimsAsync(opts, progressCb){
     stopRequested = false;
     const results = [];
@@ -255,7 +270,7 @@
       if(stopRequested) break;
       const end = Math.min(i+batch, opts.sims);
       for(let j=i;j<end;j++){
-        const r = simulateOne(opts); // now returns object with counts
+  const r = simulateOne(opts); // now returns object with counts
         results.push(r);
       }
       if(progressCb) progressCb(Math.min(opts.sims, results.length), opts.sims);
@@ -271,7 +286,7 @@
     qs('start').disabled = true; qs('stop').disabled = false;
     qs('progress').textContent = 'Starting...'; qs('output').textContent = '';
 
-    try{
+  try{
       const results = await runSimsAsync(opts, (done, total)=>{
         qs('progress').textContent = `Running simulations: ${done}/${total}`;
       });
@@ -315,13 +330,17 @@
       qs('progress').textContent = 'Error';
       qs('output').textContent = String(e);
     } finally{
-      qs('start').disabled = false; qs('stop').disabled = true;
+  qs('start').disabled = false; qs('stop').disabled = true;
+  // clear any pending stop-on-win request when a run finishes
+  stopOnWin = false;
     }
   });
 
   qs('stop').addEventListener('click', ()=>{
-    stopRequested = true;
-    qs('progress').textContent = 'Stopping...';
+  // Request stop, but only after the next winning hand.
+  // True gamblers don't stop on a loss — we honor that by waiting for a win.
+  stopOnWin = true;
+  qs('progress').textContent = 'Will stop after next winning hand...';
   });
   </script>
 </body>
