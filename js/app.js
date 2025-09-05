@@ -75,6 +75,8 @@ function simulateOne(opts){
   let consecutiveLosses = 0;
   let consecutiveWins = 0;
   let runningCount = 0;
+  // track how many times this simulation reached the configured consecutive-loss threshold
+  let maxLossStreakHits = 0;
 
   const hiLoValue = (c)=>{ if(c>=2 && c<=6) return 1; if(c>=7 && c<=9) return 0; return -1 };
 
@@ -149,6 +151,11 @@ function simulateOne(opts){
 
     if(outcome < 0){ consecutiveLosses++; consecutiveWins = 0; } else if(outcome>0){ consecutiveWins++; consecutiveLosses = 0; } else { consecutiveWins = 0; consecutiveLosses = 0; }
 
+    // if user configured a "reset after N losses", count when the run hits that exact streak
+    if (opts.resetAfterLosses > 0 && consecutiveLosses === opts.resetAfterLosses) {
+      maxLossStreakHits++;
+    }
+
     // If user requested stop-after-next-win, only stop when we record a WIN.
     // Do NOT stop on a loss — only bankruptcy (bankroll <= 0) or explicit stop-on-win should stop play.
     if (stopOnWin === true) {
@@ -166,7 +173,7 @@ function simulateOne(opts){
     if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
   }
 
-  return bankroll;
+  return { finalBankroll: bankroll, maxLossStreakHits };
 }
 
 // Async-run many simulations in small batches so UI stays responsive
@@ -202,10 +209,20 @@ qs('start').addEventListener('click', async ()=>{
       qs('progress').textContent = `Running simulations: ${done}/${total}`;
     });
 
-    const avg = results.reduce((a,b)=>a+b,0) / Math.max(1, results.length);
-    const wins = results.filter(r=>r>opts.bankroll).length;
-    const ev = avg - opts.bankroll;
-    qs('output').textContent = JSON.stringify({avgFinalBankroll:avg, ev, winRate:wins/Math.max(1,results.length)}, null, 2);
+    // results are objects { finalBankroll, maxLossStreakHits }
+    const simCount = results.length;
+    const avgFinal = results.reduce((a,b)=>a + b.finalBankroll,0) / Math.max(1, simCount);
+    const profitableSims = results.filter(r=>r.finalBankroll>opts.bankroll).length;
+    const totalMaxLossStreakHits = results.reduce((a,b)=>a + (b.maxLossStreakHits||0),0);
+    const ev = avgFinal - opts.bankroll;
+
+    qs('output').textContent = JSON.stringify({
+      simsRun: simCount,
+      avgFinalBankroll: avgFinal,
+      ev,
+      profitableSimRate: profitableSims/Math.max(1,simCount),
+      resetAfterLossesHits: totalMaxLossStreakHits
+    }, null, 2);
     qs('progress').textContent = 'Done';
   }catch(e){
     qs('progress').textContent = 'Error';
