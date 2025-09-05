@@ -1,5 +1,6 @@
 // Worker: runs simulations off the main thread
 let running = true;
+let runningStopOnWin = false;
 
 function randInt(n){return Math.floor(Math.random()*n)}
 
@@ -48,8 +49,13 @@ function simulateOne(opts){
 
   const hiLoValue = (c)=>{ if(c>=2 && c<=6) return 1; if(c>=7 && c<=9) return 0; return -1 };
 
-  for(let h=0; h<opts.handsPerSim; h++){
+  let h = 0;
+  let hitMaxLoss = false;
+  while(true){
     if(!running) break;
+    // stop when we've played the configured hands, unless the controller requested stop-after-next-win
+    if (!runningStopOnWin && h >= opts.handsPerSim) break;
+    h++;
     if(pos > shoe.length - 10 || pos >= shoe.length - cutCard){ shoe = makeShoe(opts.decks); pos=0; runningCount=0; consecutiveLosses=0; consecutiveWins=0; }
 
     if(opts.betSystem === 'flat'){
@@ -126,10 +132,10 @@ function simulateOne(opts){
     if(outcome < 0){ consecutiveLosses++; consecutiveWins = 0; } else if(outcome>0){ consecutiveWins++; consecutiveLosses = 0; } else { consecutiveWins = 0; consecutiveLosses = 0; }
 
     if(bankroll <= 0) { bankroll = 0; break; }
-    if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
+    if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) { hitMaxLoss = true; break; }
   }
 
-  return { finalBankroll: bankroll, handsWon, handsLost, pushes, blackjacks, totalHands };
+  return { finalBankroll: bankroll, handsWon, handsLost, pushes, blackjacks, totalHands, hitMaxLoss };
 }
 
 onmessage = function(ev){
@@ -137,6 +143,8 @@ onmessage = function(ev){
   if(msg.type === 'start'){
     running = true;
     const opts = msg.opts;
+    // allow controller to request "stop after next win" behavior during runtime
+    runningStopOnWin = !!opts.stopOnWin;
     const results = [];
     const sims = opts.sims;
     for(let i=0;i<sims;i++){
@@ -157,15 +165,22 @@ onmessage = function(ev){
     const totalBJs = results.reduce((a,b)=>a + b.blackjacks,0);
 
     const ev = avg - opts.bankroll;
+    const simsHitMaxLoss = results.reduce((a,b)=>a + (b.hitMaxLoss?1:0),0);
     postMessage({type:'result', data:{
       avgFinalBankroll:avg,
       ev,
       profitableSimRate: profitable/Math.max(1,simCount),
+      simsHitMaxLoss,
       perHand: { totalHands, wins: totalWins, losses: totalLosses, pushes: totalPushes, blackjacks: totalBJs },
       raw: results
     }});
+  } else if(msg.type === 'stopAfterWin'){
+    // request worker to stop after the next WIN (do not stop immediately)
+    runningStopOnWin = true;
   } else if(msg.type === 'stop'){
+    // stop immediately; also clear any stop-after-win runtime flag
     running = false;
+    runningStopOnWin = false;
   }
 }
 

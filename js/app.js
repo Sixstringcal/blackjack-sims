@@ -80,7 +80,12 @@ function simulateOne(opts){
 
   const hiLoValue = (c)=>{ if(c>=2 && c<=6) return 1; if(c>=7 && c<=9) return 0; return -1 };
 
-  for(let h=0; h<opts.handsPerSim; h++){
+  let h = 0;
+  let hitMaxLoss = false;
+  while(true){
+    // stop when we've played the configured hands, unless the user requested stop-after-next-win
+    if (!stopOnWin && h >= opts.handsPerSim) break;
+    h++;
     if(pos > shoe.length - 10 || pos >= shoe.length - cutCard){ shoe = makeShoe(opts.decks); pos=0; runningCount=0; consecutiveLosses=0; consecutiveWins=0; }
 
     // betting systems
@@ -170,10 +175,10 @@ function simulateOne(opts){
     }
 
     if(bankroll <= 0){ bankroll = 0; break; }
-    if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
+    if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) { hitMaxLoss = true; break; }
   }
 
-  return { finalBankroll: bankroll, maxLossStreakHits };
+  return { finalBankroll: bankroll, maxLossStreakHits, hitMaxLoss };
 }
 
 // Async-run many simulations in small batches so UI stays responsive
@@ -213,15 +218,17 @@ qs('start').addEventListener('click', async ()=>{
     const simCount = results.length;
     const avgFinal = results.reduce((a,b)=>a + b.finalBankroll,0) / Math.max(1, simCount);
     const profitableSims = results.filter(r=>r.finalBankroll>opts.bankroll).length;
-    const totalMaxLossStreakHits = results.reduce((a,b)=>a + (b.maxLossStreakHits||0),0);
-    const ev = avgFinal - opts.bankroll;
+  const totalMaxLossStreakHits = results.reduce((a,b)=>a + (b.maxLossStreakHits||0),0);
+  const totalHitMaxLoss = results.reduce((a,b)=>a + (b.hitMaxLoss?1:0),0);
+  const ev = avgFinal - opts.bankroll;
 
     qs('output').textContent = JSON.stringify({
       simsRun: simCount,
       avgFinalBankroll: avgFinal,
       ev,
       profitableSimRate: profitableSims/Math.max(1,simCount),
-      resetAfterLossesHits: totalMaxLossStreakHits
+  resetAfterLossesHits: totalMaxLossStreakHits,
+  simsHitMaxLoss: totalHitMaxLoss
     }, null, 2);
     qs('progress').textContent = 'Done';
   }catch(e){

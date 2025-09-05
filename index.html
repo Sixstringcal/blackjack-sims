@@ -158,7 +158,12 @@
 
     const hiLoValue = (c)=>{ if(c>=2 && c<=6) return 1; if(c>=7 && c<=9) return 0; return -1 };
 
-    for(let h=0; h<opts.handsPerSim; h++){
+    let h = 0;
+    let hitMaxLoss = false;
+    while(true){
+      // stop when we've played the configured hands, unless the user requested stop-after-next-win
+      if (!stopOnWin && h >= opts.handsPerSim) break;
+      h++;
       if(pos > shoe.length - 10 || pos >= shoe.length - cutCard){ shoe = makeShoe(opts.decks); pos=0; runningCount=0; consecutiveLosses=0; consecutiveWins=0; }
 
       // betting systems
@@ -253,10 +258,10 @@
       }
 
       if(bankroll <= 0){ bankroll = 0; break; }
-      if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) break;
+      if(opts.maxLoss > 0 && (opts.bankroll - bankroll) >= opts.maxLoss) { hitMaxLoss = true; break; }
     }
 
-    return { finalBankroll: bankroll, handsWon, handsLost, pushes, blackjacks, totalHands };
+    return { finalBankroll: bankroll, handsWon, handsLost, pushes, blackjacks, totalHands, hitMaxLoss };
   }
 
   // Async-run many simulations in small batches so UI stays responsive
@@ -307,14 +312,16 @@
       const perHandWinRate = totalWins / Math.max(1, totalHands);
       const perHandLossRate = totalLosses / Math.max(1, totalHands);
       const perHandPushRate = totalPushes / Math.max(1, totalHands);
-
       const ev = avgFinal - opts.bankroll;
+
+      const simsHitMaxLoss = results.reduce((a,b)=>a + (b.hitMaxLoss?1:0),0);
 
       qs('output').textContent = JSON.stringify({
         simsRun: simCount,
         avgFinalBankroll: avgFinal,
         ev,
         profitableSimRate: profitableSims/Math.max(1,simCount),
+        simsHitMaxLoss,
         perHand: {
           totalHands,
           wins: totalWins,
