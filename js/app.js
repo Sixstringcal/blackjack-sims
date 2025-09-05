@@ -149,16 +149,17 @@ function simulateOne(opts){
 
     if(outcome < 0){ consecutiveLosses++; consecutiveWins = 0; } else if(outcome>0){ consecutiveWins++; consecutiveLosses = 0; } else { consecutiveWins = 0; consecutiveLosses = 0; }
 
-    // If user requested stop-after-next-win, only stop once we see a winning hand.
-    if(typeof stopOnWin !== 'undefined' && stopOnWin){
-      if(outcome > 0){
+    // If user requested stop-after-next-win, only stop when we record a WIN.
+    // Do NOT stop on a loss — only bankruptcy (bankroll <= 0) or explicit stop-on-win should stop play.
+    if (stopOnWin === true) {
+      if (outcome > 0) {
         // mark stop requested so outer runner stops after this simulation
         stopRequested = true;
         stopOnWin = false;
         // finish this simulateOne early and return current bankroll
         break;
       }
-      // if this hand wasn't a win, continue playing (true gamblers don't stop on a loss)
+      // For losses or pushes, continue playing until a winning hand or bankroll exhaustion.
     }
 
     if(bankroll <= 0){ bankroll = 0; break; }
